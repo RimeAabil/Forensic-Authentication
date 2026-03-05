@@ -1,0 +1,41 @@
+audio:
+  sample_rate: 16000
+  duration: 4
+  n_lfcc: 20
+  n_fft: 512
+  hop_length: 160
+  win_length: 400
+
+data:
+  authentic_dir: data/authentic
+  tampered_dir:  data/tampered
+  deepfakes_dir: data/deepfakes
+  splits_dir:    data/splits
+  train_ratio:   0.8
+  val_ratio:     0.1
+  test_ratio:    0.1
+
+model:
+  input_channels: 1
+  cnn_filters:    [32, 64, 128]
+  lstm_hidden:    128
+  lstm_layers:    2
+  dropout:        0.3
+  num_classes:    2
+
+training:
+  epochs:         20
+  batch_size:     32
+  learning_rate:  0.001
+  weight_decay:   0.0001
+  checkpoint_dir: model/checkpoints
+  early_stopping_patience: 5
+
+app:
+  model_path: model/checkpoints/best_model.pth
+  port: 7860
+  share: false
+
+logging:
+  log_dir: logs
+  log_file: logs/training.log

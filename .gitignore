@@ -1,0 +1,30 @@
+# Virtual environment
+venv/
+
+# Data (too large for GitHub)
+data/authentic/
+data/tampered/
+data/deepfakes/
+data/noise/
+
+# Model weights
+model/checkpoints/
+
+# Logs and evaluation outputs
+logs/
+evaluation/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Temp files
+*.tmp
+*.log
+.DS_Store
