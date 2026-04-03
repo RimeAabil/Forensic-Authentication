@@ -1,117 +1,79 @@
-# 🎙️ Forensic Audio Authentication — Deep Learning
+# Forensic Audio Authentication — Deep Learning
 
-> Système de détection de manipulation audio basé sur le deep learning, capable d'identifier les enregistrements **authentiques**, **splicés**, et **deepfakes vocaux** avec une explicabilité judiciaire intégrée (Grad-CAM).
+> Deep learning-based audio manipulation detection system capable of identifying **authentic recordings**, **spliced audio**, and **voice deepfakes** with integrated forensic explainability (Grad-CAM).
 
 ---
 
-## 📌 Vue d'ensemble
+## Overview
 
-Ce projet implémente un pipeline complet d'**authentification forensique audio** à destination des experts judiciaires et chercheurs en sécurité. Il couvre la simulation de splices, l'extraction de features LFCC, l'entraînement d'un modèle CNN-BiLSTM, et l'interprétabilité des décisions via Grad-CAM — le tout accessible via une interface Gradio.
+This project implements a complete **forensic audio authentication pipeline** for forensic experts and security researchers. It covers splice simulation, LFCC feature extraction, CNN-BiLSTM model training, and decision explainability via Grad-CAM, all accessible through a Gradio interface.
 
-| Classe détectée | Description |
+| Class | Description |
 |---|---|
-| `0 — Authentique` | Enregistrement original non modifié |
-| `1 — Manipulé` | Splice simulé, deepfake vocoder (WaveFake), ou TTS (ASVspoof) |
+| `0 — Authentic` | Original unmodified recording |
+| `1 — Manipulated` | Simulated splice, vocoder deepfake (WaveFake), or TTS (ASVspoof) |
 
 ---
 
-## 🏗️ Architecture du pipeline
+## Pipeline Architecture
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│  DONNÉES BRUTES                                                       │
-│  LJSpeech (13 100 clips) + WaveFake (6 vocoders) + ASVspoof2019 LA  │
-└──────────────────────┬───────────────────────────────────────────────┘
-                       │
-                       ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│  NOTEBOOK 1 — PREPROCESSING                                          │
-│  • Rééchantillonnage à 16 kHz                                        │
-│  • Normalisation amplitude (−20 dBFS) et durée (4 s fixe)           │
-│  • Simulation de 1 000 splices avec crossfade 20 ms                  │
-│  • Construction de master_labels.csv (split 80/10/10)               │
-└──────────────────────┬───────────────────────────────────────────────┘
-                       │
-                       ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│  NOTEBOOK 2 — EXTRACTION LFCC                                        │
-│  • LFCC (20 coefficients, N_FFT=400, Hop=160)                        │
-│  • Normalisation CMVN par clip                                       │
-│  • Sauvegarde en .npy — shape (20, 400) par clip                    │
-│  • master_labels_with_features.csv                                   │
-└──────────────────────┬───────────────────────────────────────────────┘
-                       │
-                       ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│  NOTEBOOK 3 — ENTRAÎNEMENT CNN-BiLSTM                                │
-│                                                                      │
-│  Input (batch, 1, 20, 400)                                           │
-│       ↓                                                              │
-│  CNN  : Conv2D×3 [32→64→128] + BatchNorm + MaxPool                  │
-│       ↓                                                              │
-│  Bi-LSTM : 2 couches, 256 hidden × 2 directions = 512               │
-│       ↓                                                              │
-│  Classifier : Linear(512→128→2)                                      │
-│       ↓                                                              │
-│  Output : [score_authentique, score_manipulé]                        │
-│                                                                      │
-│  • WeightedRandomSampler (déséquilibre 1:9)                          │
-│  • Early stopping (patience=5), Grad Clipping                       │
-│  • Export ONNX pour déploiement                                      │
-└──────────────────────┬───────────────────────────────────────────────┘
-                       │
-                       ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│  NOTEBOOK 4 — EXPLICABILITÉ (XAI)                                    │
-│  • Grad-CAM sur la dernière couche CNN → heatmap temporelle          │
-│  • Integrated Gradients (Captum) → importance des coefficients LFCC │
-│  • Visualisations admissibles en tribunal                            │
-│  • Validation : Grad-CAM pointe sur le frame de splice connu        │
-└──────────────────────┬───────────────────────────────────────────────┘
-                       │
-                       ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│  NOTEBOOK 5 — INTERFACE GRADIO                                       │
-│  • Upload audio (.wav / .flac / .mp3 / .ogg)                        │
-│  • Pipeline temps réel : audio → LFCC → modèle → verdict            │
-│  • Affichage probabilité + heatmap Grad-CAM + rapport                │
-│  • Inférence via PyTorch ou ONNX Runtime                            │
-│  • Lien public Gradio (72h)                                          │
-└──────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    A["RAW DATA<br/>LJSpeech 13.1K<br/>+ WaveFake 6 vocoders<br/>+ ASVspoof2019 LA"] -->|"Raw Audio"| B["NOTEBOOK 1<br/>PREPROCESSING<br/><br/>- Resampling to 16kHz<br/>- Normalization -20dBFS<br/>- Splice simulation 1000<br/>- Split 80/10/10"]
+    
+    B -->|"ljspeech_16k/<br/>spliced/"| C["NOTEBOOK 2<br/>LFCC EXTRACTION<br/><br/>- LFCC 20 coefficients<br/>- CMVN normalization<br/>- Shape 20×400<br/>- Features .npy"]
+    
+    C -->|"lfcc_features/<br/>master_labels.csv"| D["NOTEBOOK 3<br/>MODEL TRAINING<br/>CNN-BiLSTM<br/><br/>- Conv2D×3 32→64→128<br/>- BiLSTM 2×256<br/>- Classifier 512→128→2<br/>- WeightedRandom/EarlyStopping<br/>- Export ONNX"]
+    
+    D -->|"best_model.pth<br/>forensic_audio.onnx"| E["NOTEBOOK 4<br/>EXPLAINABILITY<br/>XAI<br/><br/>- Grad-CAM heatmap<br/>- Integrated Gradients<br/>- Captum analysis<br/>- Courtroom-ready visualizations"]
+    
+    D -->|"Trained Model"| F["NOTEBOOK 5<br/>GRADIO INTERFACE<br/><br/>- Upload .wav/.mp3/.ogg<br/>- Real-time inference<br/>- Probability + Heatmap<br/>- PyTorch/ONNX Runtime"]
+    
+    E -->|"Analysis Report"| F
+    
+    F -->|"VERDICT<br/>Authentic vs Manipulated"| G["DEPLOYMENT<br/>Public Gradio Link<br/>72h Access"]
+    
+    style A fill:#e1f5ff
+    style B fill:#fff3e0
+    style C fill:#f3e5f5
+    style D fill:#e8f5e9
+    style E fill:#fce4ec
+    style F fill:#fff8e1
+    style G fill:#c8e6c9
 ```
 
 ---
 
-## ⚙️ Prérequis
+## Requirements
 
-| Composant | Version minimale |
+| Component | Minimum Version |
 |---|---|
 | Python | 3.10+ |
-| CUDA | 11.8+ (recommandé) |
-| GPU VRAM | 8 GB minimum (T4 Kaggle suffisant) |
+| CUDA | 11.8+ (recommended) |
+| GPU VRAM | 8 GB minimum (T4 Kaggle sufficient) |
 | RAM | 16 GB minimum |
-| Espace disque | ~50 GB (datasets + features) |
+| Disk Space | ~50 GB (datasets + features) |
 
-### Datasets requis
+### Required Datasets
 
 | Dataset | Source | Description |
 |---|---|---|
-| **LJSpeech-1.1** | [keithito/lj_speech](https://huggingface.co/datasets/keithito/lj_speech) | 13 100 clips vocaux authentiques |
-| **WaveFake** | [Kaggle WaveFake](https://www.kaggle.com/datasets/birdy654/deep-voice-deepfakes-voice-conversion) | Deepfakes par 6 vocoders différents |
-| **ASVspoof2019 LA** | [ASVspoof Challenge](https://datashare.ed.ac.uk/handle/10283/3336) | Anti-spoofing, accès sur demande |
+| **LJSpeech-1.1** | [keithito/lj_speech](https://huggingface.co/datasets/keithito/lj_speech) | 13,100 authentic voice clips |
+| **WaveFake** | [Kaggle WaveFake](https://www.kaggle.com/datasets/birdy654/deep-voice-deepfakes-voice-conversion) | Deepfakes from 6 different vocoders |
+| **ASVspoof2019 LA** | [ASVspoof Challenge](https://datashare.ed.ac.uk/handle/10283/3336) | Anti-spoofing dataset, access on request |
 
 ---
 
-## 🚀 Installation & Configuration
+## Installation & Configuration
 
-### 1. Cloner le dépôt
+### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/<votre-username>/forensic-audio-auth.git
+git clone https://github.com/<your-username>/forensic-audio-auth.git
 cd forensic-audio-auth
 ```
 
-### 2. Créer l'environnement virtuel
+### 2. Create Virtual Environment
 
 ```bash
 python3 -m venv .venv
@@ -119,7 +81,7 @@ source .venv/bin/activate          # Linux / macOS
 # .venv\Scripts\activate           # Windows
 ```
 
-### 3. Installer les dépendances
+### 3. Install Dependencies
 
 ```bash
 pip install --upgrade pip
@@ -138,7 +100,7 @@ pip install \
     Pillow
 ```
 
-### 4. Structure des répertoires attendue
+### 4. Expected Directory Structure
 
 ```
 forensic-audio-auth/
@@ -149,179 +111,179 @@ forensic-audio-auth/
 │   ├── 04-xai-gradcam.ipynb
 │   └── 05-gradio-app.ipynb
 ├── data/
-│   ├── LJSpeech-1.1/wavs/          ← .wav LJSpeech
-│   ├── generated_audio/            ← WaveFake par vocoder
+│   ├── LJSpeech-1.1/wavs/          ← LJSpeech .wav files
+│   ├── generated_audio/            ← WaveFake by vocoder
 │   └── LA/                         ← ASVspoof2019 LA
 ├── outputs/
-│   ├── ljspeech_16k/               ← généré par NB1
-│   ├── spliced/                    ← généré par NB1
+│   ├── ljspeech_16k/               ← generated by NB1
+│   ├── spliced/                    ← generated by NB1
 │   ├── splits/
-│   │   └── master_labels.csv       ← généré par NB1
-│   ├── lfcc_features/              ← généré par NB2
+│   │   └── master_labels.csv       ← generated by NB1
+│   ├── lfcc_features/              ← generated by NB2
 │   ├── checkpoints/
-│   │   └── best_model.pth          ← généré par NB3
+│   │   └── best_model.pth          ← generated by NB3
 │   └── models/
-│       └── forensic_audio.onnx     ← généré par NB3
+│       └── forensic_audio.onnx     ← generated by NB3
 └── README.md
 ```
 
 ---
 
-## 📖 Guide d'utilisation
+## Usage Guide
 
-Les notebooks doivent être **exécutés dans l'ordre**. Chaque notebook consomme les sorties du précédent.
+Notebooks must be **executed in order**. Each notebook consumes the outputs of the previous one.
 
-### Étape 1 — Prétraitement audio
+### Step 1 — Audio Preprocessing
 
 ```bash
 jupyter notebook notebooks/01-preprocessing.ipynb
 ```
 
-**Produit :**
-- `outputs/ljspeech_16k/` — clips rééchantillonnés à 16 kHz
-- `outputs/spliced/` — 1 000 clips splicés simulés
-- `outputs/splits/master_labels.csv` — index unifié avec splits 80/10/10
+**Produces:**
+- `outputs/ljspeech_16k/` — clips resampled to 16 kHz
+- `outputs/spliced/` — 1,000 simulated spliced clips
+- `outputs/splits/master_labels.csv` — unified index with 80/10/10 splits
 
-**Durée estimée :** 30–45 min sur GPU
+**Estimated Duration:** 30–45 min on GPU
 
 ---
 
-### Étape 2 — Extraction des features LFCC
+### Step 2 — LFCC Feature Extraction
 
 ```bash
 jupyter notebook notebooks/02-LFCC-extraction.ipynb
 ```
 
-**Produit :**
-- `outputs/lfcc_features/*.npy` — matrices LFCC (20, 400) par clip
-- `outputs/master_labels_with_features.csv` — CSV enrichi avec chemins .npy
+**Produces:**
+- `outputs/lfcc_features/*.npy` — LFCC matrices (20, 400) per clip
+- `outputs/master_labels_with_features.csv` — enriched CSV with .npy paths
 
-**Durée estimée :** 45–60 min sur GPU
+**Estimated Duration:** 45–60 min on GPU
 
 ---
 
-### Étape 3 — Entraînement du modèle CNN-BiLSTM
+### Step 3 — CNN-BiLSTM Model Training
 
 ```bash
 jupyter notebook notebooks/03-model-training.ipynb
 ```
 
-**Produit :**
-- `outputs/checkpoints/best_model.pth` — meilleur checkpoint (val_loss)
-- `outputs/models/forensic_audio.onnx` — modèle exporté pour déploiement
+**Produces:**
+- `outputs/checkpoints/best_model.pth` — best checkpoint (val_loss)
+- `outputs/models/forensic_audio.onnx` — model exported for deployment
 - `outputs/results/metrics.csv` — EER, FAR@1%FRR, AUC-ROC
 - `outputs/training_curves.png` / `confusion_matrix.png`
 
-**Durée estimée :** 1h30–2h sur GPU
+**Estimated Duration:** 1h30–2h on GPU
 
 ---
 
-### Étape 4 — Explicabilité Grad-CAM & SHAP
+### Step 4 — Grad-CAM Explainability & SHAP
 
 ```bash
 jupyter notebook notebooks/04-xai-gradcam.ipynb
 ```
 
-**Produit :**
-- `outputs/xai/gradcam_*.png` — heatmaps pour chaque clip analysé
-- `outputs/xai/shap_*.png` — importance des coefficients LFCC
-- `outputs/xai/courtroom_*.png` — visualisations prêtes pour rapport judiciaire
-- `outputs/xai/splice_validation.png` — validation de localisation sur splice connu
+**Produces:**
+- `outputs/xai/gradcam_*.png` — heatmaps for each analyzed clip
+- `outputs/xai/shap_*.png` — importance of LFCC coefficients
+- `outputs/xai/courtroom_*.png` — court-ready visualizations
+- `outputs/xai/splice_validation.png` — localization validation on known splice
 
-**Durée estimée :** 30–45 min sur GPU
+**Estimated Duration:** 30–45 min on GPU
 
 ---
 
-### Étape 5 — Interface Gradio
+### Step 5 — Gradio Interface
 
 ```bash
 jupyter notebook notebooks/05-gradio-app.ipynb
 ```
 
-Puis dans la cellule de lancement :
+Then in the launch cell:
 
 ```python
-# Lance l'interface avec lien public (valable 72h)
+# Launch interface with public link (valid 72h)
 demo.launch(share=True)
 ```
 
-L'interface accepte les formats `.wav`, `.flac`, `.mp3`, `.ogg` et retourne :
-- Verdict (Authentique / Manipulé)
-- Probabilité de manipulation (%)
-- Heatmap Grad-CAM superposée sur le spectrogramme LFCC
-- Rapport textuel exportable
+The interface accepts `.wav`, `.flac`, `.mp3`, `.ogg` formats and returns:
+- Verdict (Authentic / Manipulated)
+- Probability of manipulation (%)
+- Grad-CAM heatmap overlaid on LFCC spectrogram
+- Exportable text report
 
 ---
 
-## 🔧 Configuration
+## Configuration
 
-Les paramètres globaux sont définis en tête de chaque notebook. Les variables critiques à adapter selon votre environnement :
+Global parameters are defined at the head of each notebook. Critical variables to adapt to your environment:
 
-### Chemins des datasets
-
-```python
-# Dans 01-preprocessing.ipynb et 02-LFCC-extraction.ipynb
-LJSPEECH_DIR  = Path('/chemin/vers/LJSpeech-1.1/wavs')
-WAVEFAKE_DIR  = Path('/chemin/vers/generated_audio')
-ASVSPOOF_DIR  = Path('/chemin/vers/LA')
-OUTPUT_DIR    = Path('/chemin/vers/outputs')
-```
-
-### Paramètres audio
+### Dataset Paths
 
 ```python
-SAMPLE_RATE    = 16000    # Fréquence d'échantillonnage cible (Hz)
-CLIP_DURATION  = 4        # Durée fixe des clips (secondes)
-N_LFCC         = 20       # Nombre de coefficients LFCC
-N_FFT          = 400      # Taille de la fenêtre FFT (25 ms à 16 kHz)
-HOP_LENGTH     = 160      # Pas de la fenêtre (10 ms à 16 kHz)
-N_FILTER       = 128      # Nombre de filtres de la banque linéaire
-N_SPLICES      = 1000     # Nombre de clips splicés à simuler
+# In 01-preprocessing.ipynb and 02-LFCC-extraction.ipynb
+LJSPEECH_DIR  = Path('/path/to/LJSpeech-1.1/wavs')
+WAVEFAKE_DIR  = Path('/path/to/generated_audio')
+ASVSPOOF_DIR  = Path('/path/to/LA')
+OUTPUT_DIR    = Path('/path/to/outputs')
 ```
 
-### Hyperparamètres d'entraînement
+### Audio Parameters
+
+```python
+SAMPLE_RATE    = 16000    # Target sampling rate (Hz)
+CLIP_DURATION  = 4        # Fixed clip duration (seconds)
+N_LFCC         = 20       # Number of LFCC coefficients
+N_FFT          = 400      # FFT window size (25 ms at 16 kHz)
+HOP_LENGTH     = 160      # Window hop (10 ms at 16 kHz)
+N_FILTER       = 128      # Number of linear filter banks
+N_SPLICES      = 1000     # Number of spliced clips to simulate
+```
+
+### Training Hyperparameters
 
 ```python
 BATCH_SIZE     = 32
 LEARNING_RATE  = 1e-3
 N_EPOCHS       = 20
-EARLY_STOPPING = 5        # Patience en nombre d'epochs
+EARLY_STOPPING = 5        # Patience in number of epochs
 GRAD_CLIP      = 1.0
 ```
 
-### Exécution sur Kaggle
+### Execution on Kaggle
 
-Si vous exécutez sur Kaggle, adaptez les chemins de base :
+If running on Kaggle, adapt the base paths:
 
 ```python
-BASE     = Path('/kaggle/input/<votre-username>/<nom-dataset>')
+BASE     = Path('/kaggle/input/<your-username>/<dataset-name>')
 OUTPUT_DIR = Path('/kaggle/working')
 ```
 
-Activer le GPU dans **Settings → Accelerator → GPU T4 x2** avant d'exécuter.
+Enable GPU in **Settings → Accelerator → GPU T4 x2** before executing.
 
 ---
 
-## 📊 Métriques cibles
+## Target Metrics
 
-| Métrique | Objectif |
+| Metric | Objective |
 |---|---|
 | EER (Equal Error Rate) | < 5% |
 | AUC-ROC | > 0.95 |
 | FAR @ 1% FRR | < 3% |
-| Accuracy test set | > 95% |
+| Accuracy (test set) | > 95% |
 
 ---
 
-## 👥 Contributeurs
+## Contributors
 
-| Nom | Rôle |
+| Name | Role |
 |---|---|
-| **[Nom 1]** | Modélisation deep learning, entraînement, XAI |
-| **[Nom 2]** | Prétraitement audio, simulation splices, interface Gradio |
+| **[Name 1]** | Deep learning modeling, training, XAI |
+| **[Name 2]** | Audio preprocessing, splice simulation, Gradio interface |
 
 ---
 
-## 📄 Licence
+## License
 
-Ce projet est développé dans un cadre académique. Les datasets utilisés (LJSpeech, WaveFake, ASVspoof2019) sont soumis à leurs licences respectives — consulter les sources originales avant tout usage commercial.
+This project is developed in an academic context. The datasets used (LJSpeech, WaveFake, ASVspoof2019) are subject to their respective licenses — consult the original sources before any commercial use.
